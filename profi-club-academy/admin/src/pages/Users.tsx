@@ -11,7 +11,7 @@ interface CsvRow {
 }
 interface ImportResult { row: number; full_name: string; ok: boolean; error?: string }
 
-const FUNCTIONS_URL = (import.meta.env.VITE_SUPABASE_URL as string)?.replace(".supabase.co", ".functions.supabase.co");
+const FUNCTIONS_URL = `${import.meta.env.VITE_SUPABASE_URL as string}/functions/v1`;
 
 async function callFunction(name: string, body: unknown, timeoutMs = 30000) {
   const { data: sessionData } = await supabase.auth.getSession();
