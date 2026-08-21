@@ -1,0 +1,9 @@
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body { @apply bg-paper text-navy-deep font-sans; }
+
+.input { @apply w-full border border-gray-200 rounded-lg px-3.5 py-2.5 text-sm focus:outline-none focus:border-sky; }
+.input-sm { @apply w-full border border-gray-200 rounded-md px-3 py-2 text-xs focus:outline-none focus:border-sky; }
