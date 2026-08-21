@@ -36,3 +36,10 @@ export function parseDob(dobDDMMYY: string): { password: string; isoDate: string
   const century = Number(yy) <= 30 ? "20" : "19"; // adjust cutoff as needed
   return { password: dobDDMMYY.trim(), isoDate: `${century}${yy}-${mm}-${dd}` };
 }
+
+export function normalizeRole(raw: string): "manager" | "sales" | null {
+  const v = raw.trim().toLowerCase();
+  if (["manager", "менежер", "менежери"].includes(v)) return "manager";
+  if (["sales", "савдо вакили", "савдо", "sotuv vakili", "sotuvchi"].includes(v)) return "sales";
+  return null;
+}
