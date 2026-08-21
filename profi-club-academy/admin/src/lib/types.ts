@@ -71,6 +71,7 @@ export interface ModuleProgress {
   completed: boolean;
   best_score_pct: number | null;
   attempts: number;
+  completed_at: string | null;
 }
 
 export interface Certificate {
