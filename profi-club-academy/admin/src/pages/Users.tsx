@@ -13,14 +13,36 @@ interface ImportResult { row: number; full_name: string; ok: boolean; error?: st
 
 const FUNCTIONS_URL = (import.meta.env.VITE_SUPABASE_URL as string)?.replace(".supabase.co", ".functions.supabase.co");
 
-async function callFunction(name: string, body: unknown) {
+async function callFunction(name: string, body: unknown, timeoutMs = 30000) {
   const { data: sessionData } = await supabase.auth.getSession();
-  const res = await fetch(`${FUNCTIONS_URL}/${name}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${sessionData.session?.access_token}` },
-    body: JSON.stringify(body),
-  });
-  return res.json();
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${FUNCTIONS_URL}/${name}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${sessionData.session?.access_token}` },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`Server javobi: ${res.status} ${text.slice(0, 200)}`);
+    }
+    return await res.json();
+  } catch (e) {
+    clearTimeout(timeoutId);
+    if ((e as Error).name === "AbortError") {
+      throw new Error("Server javob bermadi (timeout) — qatorlar soni ko'p bo'lsa, kichikroq guruhlarda urinib ko'ring");
+    }
+    throw e;
+  }
+}
+
+function chunk<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
 }
 
 export default function Users() {
@@ -28,6 +50,8 @@ export default function Users() {
   const [csvRows, setCsvRows] = useState<CsvRow[]>([]);
   const [importResults, setImportResults] = useState<ImportResult[] | null>(null);
   const [importing, setImporting] = useState(false);
+  const [importProgress, setImportProgress] = useState<{ done: number; total: number } | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
 
   const [newName, setNewName] = useState("");
   const [newDob, setNewDob] = useState("");
@@ -56,10 +80,34 @@ export default function Users() {
   async function runImport() {
     if (csvRows.length === 0) return;
     setImporting(true);
-    const res = await callFunction("bulk-import-employees", { employees: csvRows });
-    setImporting(false);
-    setImportResults(res.results ?? [{ row: 0, full_name: "—", ok: false, error: res.error ?? "Номаълум хатолик" }]);
-    load();
+    setImportError(null);
+    setImportResults(null);
+    setImportProgress({ done: 0, total: csvRows.length });
+
+    const BATCH_SIZE = 15; // small enough that one batch reliably finishes before any timeout
+    const batches = chunk(csvRows, BATCH_SIZE);
+    const allResults: ImportResult[] = [];
+
+    try {
+      for (let b = 0; b < batches.length; b++) {
+        const batch = batches[b];
+        const offset = b * BATCH_SIZE;
+        try {
+          const res = await callFunction("bulk-import-employees", { employees: batch });
+          const batchResults: ImportResult[] = (res.results ?? []).map((r: ImportResult) => ({ ...r, row: r.row + offset }));
+          allResults.push(...batchResults);
+        } catch (batchErr) {
+          batch.forEach((row, i) => allResults.push({ row: offset + i + 1, full_name: row.full_name ?? "?", ok: false, error: (batchErr as Error).message }));
+        }
+        setImportProgress({ done: Math.min((b + 1) * BATCH_SIZE, csvRows.length), total: csvRows.length });
+        setImportResults([...allResults]);
+      }
+    } catch (e) {
+      setImportError((e as Error).message || "Номаълум хатолик юз берди");
+    } finally {
+      setImporting(false);
+      load();
+    }
   }
 
   async function addEmployee() {
@@ -69,24 +117,33 @@ export default function Users() {
       return;
     }
     setAdding(true);
-    const res = await callFunction("create-employee", {
-      full_name: newName.trim(),
-      date_of_birth: newDob,
-      employee_role: newRole,
-      department: newDept.trim() || null,
-    });
-    setAdding(false);
-    if (res.error) {
-      setAddError(res.error);
-      return;
+    try {
+      const res = await callFunction("create-employee", {
+        full_name: newName.trim(),
+        date_of_birth: newDob,
+        employee_role: newRole,
+        department: newDept.trim() || null,
+      });
+      if (res.error) {
+        setAddError(res.error);
+        return;
+      }
+      setNewName(""); setNewDob(""); setNewDept("");
+      load();
+    } catch (e) {
+      setAddError((e as Error).message || "Номаълум хатолик юз берди");
+    } finally {
+      setAdding(false);
     }
-    setNewName(""); setNewDob(""); setNewDept("");
-    load();
   }
 
   async function deleteEmployee(id: string, name: string) {
     if (!confirm(`«${name}» ходимини ўчиришни тасдиқлайсизми? У платформага кира олмай қолади.`)) return;
-    await callFunction("delete-employee", { employee_id: id });
+    try {
+      await callFunction("delete-employee", { employee_id: id });
+    } catch (e) {
+      alert((e as Error).message || "Ўчиришда хатолик юз берди");
+    }
     load();
   }
 
@@ -123,9 +180,15 @@ export default function Users() {
               </table>
             </div>
             <button onClick={runImport} disabled={importing} className="bg-navy text-white text-sm font-semibold rounded-lg px-5 py-2.5 disabled:opacity-50">
-              {importing ? "Юкланмоқда..." : `${csvRows.length} ходимни импорт қилиш`}
+              {importing && importProgress ? `Юкланмоқда... (${importProgress.done}/${importProgress.total})` : importing ? "Юкланмоқда..." : `${csvRows.length} ходимни импорт қилиш`}
             </button>
           </>
+        )}
+
+        {importError && (
+          <div className="mt-4 text-xs px-3 py-2.5 rounded bg-red-50 text-clay">
+            Хатолик: {importError} — юқоридаги натижалар рўйхатида қайси қаторлар муваффақиятли бўлганини кўришингиз мумкин, фақат муваффақиятсизларини қайта юкланг.
+          </div>
         )}
 
         {importResults && (
