@@ -2,7 +2,7 @@
 // Admin-only. Creates the Supabase Auth user (synthetic email + DOB
 // password) AND the public.employees row in one call.
 import { corsHeaders } from "../_shared/cors.ts";
-import { requireAdmin, parseDob } from "../_shared/admin-guard.ts";
+import { requireAdmin, parseDob, normalizeRole } from "../_shared/admin-guard.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -18,8 +18,9 @@ Deno.serve(async (req) => {
     if (!full_name || !date_of_birth || !employee_role) {
       return new Response(JSON.stringify({ error: "full_name, date_of_birth, employee_role majburiy" }), { status: 400, headers: corsHeaders });
     }
-    if (!["manager", "sales"].includes(employee_role)) {
-      return new Response(JSON.stringify({ error: "employee_role 'manager' yoki 'sales' bo'lishi kerak" }), { status: 400, headers: corsHeaders });
+    const normalizedRole = normalizeRole(String(employee_role));
+    if (!normalizedRole) {
+      return new Response(JSON.stringify({ error: "employee_role 'manager'/'sales' yoki 'Менежер'/'Савдо вакили' bo'lishi kerak" }), { status: 400, headers: corsHeaders });
     }
     const dob = parseDob(date_of_birth);
     if (!dob) {
