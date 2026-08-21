@@ -4,7 +4,7 @@
 // Returns a per-row result so the UI can show which ones failed and why
 // (e.g. malformed DOB, duplicate name) without losing the good rows.
 import { corsHeaders } from "../_shared/cors.ts";
-import { requireAdmin, parseDob } from "../_shared/admin-guard.ts";
+import { requireAdmin, parseDob, normalizeRole } from "../_shared/admin-guard.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -29,7 +29,8 @@ Deno.serve(async (req) => {
         results.push({ row: i + 1, full_name: full_name ?? "?", ok: false, error: "full_name/date_of_birth/employee_role yetishmayapti" });
         continue;
       }
-      if (!["manager", "sales"].includes(employee_role)) {
+      const normalizedRole = normalizeRole(String(employee_role));
+      if (!normalizedRole) {
         results.push({ row: i + 1, full_name, ok: false, error: `noto'g'ri rol: ${employee_role}` });
         continue;
       }
